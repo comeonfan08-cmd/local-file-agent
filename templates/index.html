@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>本地文件 Agent</title>
+<style>
+  :root{
+    --bg:#F7F7F5; --card:#FFFFFF; --border:#E3E3DE;
+    --text:#1F1F1D; --sub:#6B6B66; --hint:#8E8E88;
+    --blue:#185FA5; --blue-bg:#E6F1FB;
+    --teal:#0F6E56; --teal-bg:#E1F5EE;
+    --red:#A32D2D; --red-bg:#FCEBEB;
+    --amber:#854F0B; --amber-bg:#FAEEDA;
+    --purple:#534AB7; --purple-bg:#F5F4FD;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:14px; line-height:1.6;
+    display:flex; flex-direction:column; height:100vh;
+  }
+  header{
+    flex:0 0 auto; padding:14px 20px; background:var(--card);
+    border-bottom:1px solid var(--border);
+  }
+  header h1{margin:0; font-size:15px; font-weight:500}
+  .meta{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+  .chip{
+    font-size:12px; color:var(--sub); background:var(--bg);
+    border:1px solid var(--border); border-radius:6px; padding:2px 8px;
+    font-family:var(--mono); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .warn{
+    margin-top:8px; font-size:12px; color:var(--red); background:var(--red-bg);
+    border:1px solid #F0C8C8; border-radius:6px; padding:6px 10px;
+  }
+  main{flex:1 1 auto; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:10px}
+  .empty{color:var(--hint); font-size:13px; text-align:center; padding:40px 0}
+
+  .welcome{max-width:720px; margin:0 auto; padding:4px 0 20px}
+  .wtitle{margin:0 0 10px; font-size:20px; font-weight:500}
+  .wlead{margin:0 0 20px; font-size:13.5px; color:var(--sub); line-height:1.8}
+  .caps{display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:22px}
+  .cap{border:1px solid var(--border); border-radius:12px; background:var(--card); padding:12px 14px}
+  .cap h3{margin:0 0 5px; font-size:13px; font-weight:500; display:flex; align-items:center}
+  .cap p{margin:0; font-size:12.5px; color:var(--sub); line-height:1.6}
+  .dot{display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:8px; flex:0 0 auto}
+  .ex-title{margin:0 0 8px; font-size:12px; color:var(--hint); font-family:var(--mono)}
+  .exs{display:flex; flex-direction:column; gap:8px}
+  .ex{width:100%; text-align:left; background:var(--card); border:1px solid var(--border);
+      border-radius:10px; padding:10px 14px; font-size:13px; color:var(--text); cursor:pointer}
+  .ex:hover{border-color:#A9CBEA; background:#FBFDFF}
+  .safety{margin:18px 0 0; font-size:12px; color:var(--hint); line-height:1.75;
+          border-left:2px solid var(--border); padding-left:10px}
+
+  .user{
+    align-self:flex-end; max-width:78%; background:var(--blue-bg); color:#0C447C;
+    border:1px solid #BFDCF5; border-radius:12px 12px 2px 12px; padding:10px 14px;
+    white-space:pre-wrap; word-break:break-word;
+  }
+  .block{border:1px solid var(--border); border-radius:10px; background:var(--card); padding:10px 14px}
+  .label{font-size:11px; letter-spacing:.04em; color:var(--hint); margin-bottom:4px; font-family:var(--mono)}
+  .body{white-space:pre-wrap; word-break:break-word}
+
+  .step{display:flex; align-items:center; gap:10px; color:var(--hint); font-size:12px; margin-top:4px}
+  .step::before,.step::after{content:""; flex:1; height:1px; background:var(--border)}
+  .decision{font-size:12px; color:var(--sub); font-family:var(--mono)}
+
+  .reasoning{background:var(--purple-bg); border-color:#DAD7F2}
+  .reasoning .label{color:var(--purple)}
+  .reasoning .body{color:#3F3A6E; font-size:13px}
+
+  .toolcall{background:#F1EFE8; border-color:#DCDAD1}
+  .toolcall .label{color:#5F5E5A}
+  .cmd{font-family:var(--mono); font-size:13px; color:#2C2C2A; white-space:pre-wrap; word-break:break-all}
+
+  .result{font-size:12.5px; display:flex; gap:8px; align-items:flex-start}
+  .result.ok{background:var(--teal-bg); border-color:#BDE5D8; color:var(--teal)}
+  .result.fail{background:var(--red-bg); border-color:#F0C8C8; color:var(--red)}
+  .result .stderr{font-family:var(--mono); font-size:12px; white-space:pre-wrap; word-break:break-word; margin-top:4px; opacity:.85}
+
+  .final{background:var(--blue-bg); border-color:#BFDCF5}
+  .final .label{color:var(--blue)}
+  .final .body{color:#0C447C; font-size:14px}
+
+  .error{background:var(--red-bg); border-color:#F0C8C8; color:var(--red)}
+  .error .label{color:var(--red)}
+  .warning{background:var(--amber-bg); border-color:#F2DFAF; color:var(--amber)}
+
+  footer{
+    flex:0 0 auto; background:var(--card); border-top:1px solid var(--border); padding:12px 20px;
+  }
+  .inputrow{display:flex; gap:10px; align-items:flex-end; max-width:1000px; margin:0 auto}
+  textarea{
+    flex:1; resize:none; min-height:52px; max-height:160px; padding:10px 12px;
+    border:1px solid var(--border); border-radius:10px; background:var(--bg);
+    font:inherit; color:inherit; outline:none;
+  }
+  textarea:focus{border-color:#A9CBEA; background:var(--card)}
+  button{
+    padding:10px 18px; border-radius:10px; border:1px solid transparent;
+    font:inherit; font-weight:500; cursor:pointer; white-space:nowrap;
+  }
+  #send{background:var(--blue); color:#fff}
+  #send:disabled{background:#B9CFE2; cursor:not-allowed}
+  #stopb{background:var(--card); color:var(--red); border-color:#F0C8C8}
+  #stopb:disabled{color:var(--hint); border-color:var(--border); cursor:not-allowed}
+  .status{max-width:1000px; margin:6px auto 0; font-size:12px; color:var(--hint); min-height:16px}
+  .hrow{display:flex; align-items:center; justify-content:space-between; gap:12px}
+  .ghost{background:var(--card); color:var(--text); border:1px solid var(--border)}
+  .ghost:hover{border-color:#C9C9C2}
+  .primary{background:#5B6EA8; color:#fff; border-color:#5B6EA8}
+  .primary:hover{background:#4E6098}
+
+  .mask{position:fixed; inset:0; background:rgba(31,31,29,.28); display:flex;
+        align-items:center; justify-content:center; padding:20px; z-index:50}
+  .mask[hidden]{display:none}
+  .panel{width:100%; max-width:560px; background:var(--card); border:1px solid var(--border);
+         border-radius:14px; display:flex; flex-direction:column; max-height:100%}
+  .phead{display:flex; align-items:center; justify-content:space-between;
+         padding:14px 20px; border-bottom:1px solid var(--border)}
+  .phead h2{margin:0; font-size:15px; font-weight:500}
+  .xbtn{background:none; border:none; padding:2px 8px; color:var(--hint); font-size:18px; cursor:pointer; line-height:1}
+  .pbody{padding:16px 20px; overflow-y:auto}
+  .pfoot{display:flex; justify-content:flex-end; gap:10px;
+         padding:14px 20px; border-top:1px solid var(--border)}
+  .field{margin-bottom:18px}
+  .flabel{display:block; font-size:13px; color:var(--sub); margin:0 0 8px}
+  .keyrow{display:flex; gap:10px; align-items:stretch}
+  .keywrap{position:relative; flex:1}
+  .keywrap input, #modelcustom{
+    width:100%; padding:10px 42px 10px 12px; border:1px solid var(--border);
+    border-radius:10px; background:var(--card); font:inherit; color:inherit; outline:none}
+  .keywrap input:focus, #modelcustom:focus, select:focus{border-color:#7FA8D4}
+  .eyebtn{position:absolute; right:6px; top:50%; transform:translateY(-50%);
+          background:none; border:none; padding:6px; cursor:pointer; color:var(--hint);
+          display:flex; align-items:center; border-radius:6px}
+  .eyebtn .slash{display:none}
+  .eyebtn.on .slash{display:inline}
+  .eyebtn.on{color:var(--blue)}
+  .tip{font-size:12px; color:var(--hint); margin-top:6px; font-family:var(--mono); word-break:break-all}
+  .flabelrow{display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:8px}
+  .flabelrow .flabel{margin:0}
+  .flabelrow .linkbtn{margin-top:0}
+  .linkbtn{background:none; border:none; padding:0; margin-top:6px; color:var(--blue);
+           font:inherit; font-size:12px; cursor:pointer; white-space:nowrap; flex:0 0 auto}
+  .linkbtn:hover{text-decoration:underline}
+  .linkbtn:disabled{color:var(--hint); cursor:not-allowed; text-decoration:none}
+  .selrow{display:flex; gap:10px; align-items:center}
+  .selrow select{flex:1}
+  .selrow .linkbtn{margin-top:0}
+  select{width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px;
+         background:var(--card); font:inherit; color:inherit; outline:none; appearance:none;
+         background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238E8E88' stroke-width='2' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>");
+         background-repeat:no-repeat; background-position:right 12px center}
+  #modelcustom{margin-top:8px; padding-right:12px}
+  .hidden{display:none}
+  .testout{font-size:12.5px; font-family:var(--mono); min-height:0; word-break:break-all}
+  .testout.ok{color:var(--teal)}
+  .testout.err{color:var(--red)}
+
+  @media (max-width:640px){ .user{max-width:92%} .inputrow{flex-wrap:wrap} .caps{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hrow">
+    <h1>本地文件 Agent</h1>
+    <button class="ghost" id="opengear">模型设置</button>
+  </div>
+  <div class="meta">
+    <span class="chip" id="chipModel">模型 {{ model }}</span>
+    <span class="chip">最大轮数 {{ max_steps }}</span>
+    <span class="chip">工作目录 {{ workdir }}</span>
+    <span class="chip" id="chipKey">Key {{ key_masked }} · {{ key_source }}</span>
+  </div>
+  {% if not has_key %}
+  <div class="warn" id="keywarn">未读到 API Key，点右上角「模型设置」填一个，或设置环境变量 DEEPSEEK_API_KEY。</div>
+  {% endif %}
+</header>
+
+<main id="stream">
+  <div class="welcome" id="welcome">
+    <h2 class="wtitle">你好，我是本地文件 Agent</h2>
+    <p class="wlead">我不只会聊天。你说一件事，我会在你这台电脑上真的动手：建文件、改内容、跑命令、读结果。遇到报错不会卡住，它会自己看报错换个办法再试，最多 20 轮。每一轮的思考、决策、执行结果你都能实时看到。</p>
+
+    <div class="caps">
+      <div class="cap">
+        <h3><span class="dot" style="background:#185FA5"></span>建文件 · 写内容</h3>
+        <p>按你的要求创建目录和文件，写入指定内容</p>
+      </div>
+      <div class="cap">
+        <h3><span class="dot" style="background:#0F6E56"></span>运行命令 · 脚本</h3>
+        <p>执行终端命令、跑 Python，再把输出读回来判断结果</p>
+      </div>
+      <div class="cap">
+        <h3><span class="dot" style="background:#534AB7"></span>多轮试错</h3>
+        <p>失败不会中断任务，它会看到报错自己调整</p>
+      </div>
+      <div class="cap">
+        <h3><span class="dot" style="background:#854F0B"></span>看得见 · 停得住</h3>
+        <p>每轮决策与结果实时推送，随时可以点停止</p>
+      </div>
+    </div>
+
+    <p class="ex-title">试试这些</p>
+    <div class="exs">
+      <button class="ex" data-q="在当前目录建一个 hello.py，打印 1 到 5，然后运行它">在当前目录建一个 hello.py，打印 1 到 5，然后运行它</button>
+      <button class="ex" data-q="看看当前目录有哪些文件，并逐个告诉我它是干什么用的">看看当前目录有哪些文件，并逐个告诉我它是干什么用的</button>
+      <button class="ex" data-q="统计 log.txt 里一共记录了多少轮对话，并告诉我最近一轮的时间">统计 log.txt 里一共记录了多少轮对话，并告诉我最近一轮的时间</button>
+    </div>
+
+    <p class="safety">服务只监听 127.0.0.1，别的设备访问不到。但它执行的是你本机真实的命令——发送前请确认任务内容是你想要的。</p>
+  </div>
+</main>
+
+<footer>
+  <div class="inputrow">
+    <textarea id="q" placeholder="例如：在当前目录建一个 hello.py，打印 1 到 5，然后运行它&#10;（Enter 发送，Shift+Enter 换行）"></textarea>
+    <button id="send">发送</button>
+    <button id="stopb" disabled>停止</button>
+  </div>
+  <div class="status" id="status"></div>
+</footer>
+
+<div class="mask" id="mask" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="ptitle">
+    <div class="phead">
+      <h2 id="ptitle">模型设置</h2>
+      <button class="xbtn" id="closeX" aria-label="关闭">&times;</button>
+    </div>
+    <div class="pbody">
+      <div class="field">
+        <div class="flabelrow">
+          <label class="flabel" for="keyinput">API Key</label>
+          <button class="linkbtn" id="clearkey" type="button">清除已保存</button>
+        </div>
+        <div class="keyrow">
+          <div class="keywrap">
+            <input id="keyinput" type="password" placeholder="输入你的 API Key" autocomplete="off" spellcheck="false">
+            <button class="eyebtn" id="eyebtn" type="button" aria-label="显示或隐藏密钥">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/>
+                <circle cx="12" cy="12" r="2.6"/>
+                <line class="slash" x1="4" y1="20" x2="20" y2="4"/>
+              </svg>
+            </button>
+          </div>
+          <button class="ghost" id="testbtn" type="button">测试连接</button>
+        </div>
+        <div class="tip" id="keytip"></div>
+      </div>
+
+      <div class="field">
+        <label class="flabel" for="modelsel">模型名称</label>
+        <div class="selrow">
+          <select id="modelsel">
+            <option value="">加载中…</option>
+          </select>
+          <button class="linkbtn" id="refreshmodels" type="button">刷新列表</button>
+        </div>
+        <input id="modelcustom" class="hidden" placeholder="输入模型名称，例如 deepseek-flash" spellcheck="false">
+        <div class="tip" id="modeltip"></div>
+      </div>
+
+      <div class="testout" id="testout"></div>
+    </div>
+    <div class="pfoot">
+      <button class="ghost" id="cancelbtn">取消</button>
+      <button class="primary" id="savebtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const stream = document.getElementById('stream');
+const welcome = document.getElementById('welcome');
+const input  = document.getElementById('q');
+const sendBtn= document.getElementById('send');
+const stopBtn= document.getElementById('stopb');
+const statusEl = document.getElementById('status');
+
+let es = null;          // 当前 EventSource
+let runId = null;       // 当前任务 id，用于停止
+let finished = true;    // 是否已正常结束（避免 onerror 误报）
+
+function el(tag, cls, text){
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;   // 一律用 textContent，防注入
+  return n;
+}
+
+function scrollDown(){
+  stream.scrollTop = stream.scrollHeight;
+}
+
+function block(cls, labelText, bodyText){
+  const b = el('div', 'block ' + cls);
+  if (labelText) b.appendChild(el('div', 'label', labelText));
+  if (bodyText !== undefined && bodyText !== '') b.appendChild(el('div', 'body', bodyText));
+  stream.appendChild(b);
+  scrollDown();
+  return b;
+}
+
+function render(ev){
+  switch (ev.type) {
+    case 'step': {
+      const d = el('div', 'step', '第 ' + ev.step + ' 轮');
+      stream.appendChild(d);
+      break;
+    }
+    case 'decision':
+      stream.appendChild(el('div', 'decision', 'finish_reason = ' + ev.finish_reason));
+      break;
+    case 'reasoning':
+      block('reasoning', '思考 reasoning_content', ev.text);
+      break;
+    case 'content':
+      block('', '模型说 content', ev.text);
+      break;
+    case 'tool_call': {
+      const b = el('div', 'block toolcall');
+      b.appendChild(el('div', 'label', '决定调用 ' + ev.name + (ev.cwd ? ' · cwd=' + ev.cwd : '')));
+      b.appendChild(el('div', 'cmd', '$ ' + ev.command));
+      stream.appendChild(b);
+      break;
+    }
+    case 'tool_result': {
+      const ok = ev.exit_code === 0;
+      const b = el('div', 'block result ' + (ok ? 'ok' : 'fail'));
+      const wrap = el('div');
+      wrap.appendChild(el('div', null, ok ? '执行成功 · exit_code 0' : '执行失败 · exit_code ' + ev.exit_code));
+      wrap.appendChild(el('div', 'label', 'cwd ' + ev.cwd));
+      if (!ok && ev.stderr_head) wrap.appendChild(el('div', 'stderr', ev.stderr_head));
+      b.appendChild(wrap);
+      stream.appendChild(b);
+      break;
+    }
+    case 'warning':
+      block('warning', '提醒', ev.text);
+      break;
+    case 'error':
+      block('error', '出错', ev.text);
+      break;
+    case 'final':
+      block('final', '最终回答', ev.text);
+      break;
+    case 'start':
+      runId = ev.run_id;
+      stopBtn.disabled = false;
+      statusEl.textContent = '运行中…  task ' + ev.run_id + '  ' + ev.time + '  ·  可点「停止」，在下一轮开始前生效';
+      break;
+    case 'done':
+      finished = true;
+      statusEl.textContent = '本轮结束。完整请求/响应已追加到 log.txt';
+      break;
+  }
+  scrollDown();
+}
+
+function finishUI(){
+  sendBtn.disabled = false;
+  stopBtn.disabled = true;
+  if (es) { es.close(); es = null; }
+}
+
+function start(question){
+  if (welcome) welcome.remove();
+  const u = el('div', 'user', question);
+  stream.appendChild(u);
+  scrollDown();
+
+  finished = false;
+  sendBtn.disabled = true;
+  statusEl.textContent = '连接中…';
+
+  es = new EventSource('/run?q=' + encodeURIComponent(question));
+
+  es.onmessage = function(e){
+    let ev;
+    try { ev = JSON.parse(e.data); } catch (err) { return; }
+    render(ev);
+    if (ev.type === 'done') finishUI();
+  };
+
+  es.onerror = function(){
+    if (finished) return;              // 正常关闭时不算错误
+    stream.appendChild(el('div', 'block error', '连接中断：服务端可能已退出，检查运行 web.py 的终端'));
+    finished = true;
+    finishUI();
+    statusEl.textContent = '连接中断';
+  };
+}
+
+sendBtn.onclick = function(){
+  const q = input.value.trim();
+  if (!q || !finished) return;
+  input.value = '';
+  start(q);
+};
+
+document.querySelectorAll('.ex').forEach(function(b){
+  b.onclick = function(){
+    input.value = b.dataset.q || b.textContent;
+    input.focus();
+    statusEl.textContent = '已填入示例，确认无误后按 Enter 或点「发送」';
+  };
+});
+
+input.addEventListener('keydown', function(e){
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){
+    e.preventDefault();
+    sendBtn.click();
+  }
+});
+
+stopBtn.onclick = function(){
+  if (!runId) return;
+  fetch('/stop?run_id=' + encodeURIComponent(runId))
+    .then(r => r.json())
+    .then(d => { statusEl.textContent = d.msg; })
+    .catch(() => { statusEl.textContent = '停止请求失败'; });
+};
+
+/* ---------------- 模型设置面板 ---------------- */
+const CUSTOM = '__custom__';
+const panel   = document.getElementById('mask');
+const keyInput= document.getElementById('keyinput');
+const keyTip  = document.getElementById('keytip');
+const eyeBtn  = document.getElementById('eyebtn');
+const modelSel= document.getElementById('modelsel');
+const modelCustom = document.getElementById('modelcustom');
+const testBtn = document.getElementById('testbtn');
+const testOut = document.getElementById('testout');
+const saveBtn = document.getElementById('savebtn');
+const openGear= document.getElementById('opengear');
+
+const modelTip = document.getElementById('modeltip');
+const clearBtn = document.getElementById('clearkey');
+
+let serverState = {model:'', models:[], models_source:'', models_error:'',
+                   key_masked:'', key_source:'', has_key:false, has_saved_key:false};
+
+function updateChips(d){
+  document.getElementById('chipModel').textContent = '模型 ' + d.model;
+  document.getElementById('chipKey').textContent = 'Key ' + d.key_masked + ' · ' + d.key_source;
+  const w = document.getElementById('keywarn');
+  if (w) w.style.display = d.has_key ? 'none' : '';
+}
+
+function buildModelOptions(models, current){
+  modelSel.textContent = '';
+  const frag = document.createDocumentFragment();
+
+  models.forEach(function(m){
+    const o = document.createElement('option');
+    o.value = m.id;
+    const short = String(m.name || '').replace(/^DeepSeek-/, '');
+    let text = m.id;
+    const bits = [];
+    if (short && short !== m.id) bits.push(short);
+    if (m.ctx) bits.push(m.ctx + ' 上下文');
+    if (m.retired) bits.push('已退役');
+    if (bits.length) text += '（' + bits.join(' · ') + '）';
+    o.textContent = text;
+    frag.appendChild(o);
+  });
+
+  const c = document.createElement('option');
+  c.value = CUSTOM;
+  c.textContent = '自定义…';
+  frag.appendChild(c);
+  modelSel.appendChild(frag);
+
+  const ids = models.map(function(m){ return m.id; });
+  if (ids.indexOf(current) >= 0){
+    modelSel.value = current;
+    modelCustom.value = '';
+  } else {
+    modelSel.value = CUSTOM;
+    modelCustom.value = current || '';
+  }
+}
+
+function chosenModel(){
+  return modelSel.value === CUSTOM ? modelCustom.value.trim() : modelSel.value;
+}
+
+function chosenKey(){
+  // state=masked 说明用户没动过输入框 → 返回空串，让服务端沿用原值
+  if (keyInput.dataset.state === 'masked') return '';
+  return keyInput.value.trim();
+}
+
+function syncModelInput(){
+  const custom = modelSel.value === CUSTOM;
+  modelCustom.classList.toggle('hidden', !custom);
+  if (custom) modelCustom.focus();
+}
+
+function setTest(text, cls){
+  testOut.className = 'testout' + (cls ? ' ' + cls : '');
+  testOut.textContent = text;
+}
+
+async function openPanel(){
+  setTest('', '');
+  try {
+    serverState = await (await fetch('/settings')).json();
+  } catch (e) { /* 服务端没起来就在下面按空状态显示 */ }
+
+  eyeBtn.classList.remove('on');
+  if (serverState.has_key){
+    keyInput.value = serverState.key_masked;
+    keyInput.type = 'text';              // 明文显示脱敏串，才能看到首尾
+    keyInput.dataset.state = 'masked';
+    eyeBtn.disabled = true;
+    keyTip.textContent = '上面是脱敏后的 Key（首尾可见），来自 ' + serverState.key_source
+      + '。直接输入新 Key 会替换它；不动它直接保存 = 保持不变。';
+  } else {
+    keyInput.value = '';
+    keyInput.type = 'password';
+    keyInput.dataset.state = 'empty';
+    eyeBtn.disabled = false;
+    keyTip.textContent = '尚未配置 Key，请粘贴一个';
+  }
+
+  buildModelOptions(serverState.models || [], serverState.model);
+  modelTip.textContent = (serverState.models_source === 'live')
+    ? '来自官方 /models 接口，缓存 5 分钟'
+    : '在线拉取失败' + (serverState.models_error ? '（' + serverState.models_error + '）' : '') + '，以下为内置兜底清单';
+  clearBtn.disabled = !serverState.has_saved_key;
+  syncModelInput();
+  panel.hidden = false;
+  setTimeout(() => keyInput.focus(), 60);
+}
+
+function closePanel(){ panel.hidden = true; }
+
+openGear.onclick = openPanel;
+document.getElementById('cancelbtn').onclick = closePanel;
+document.getElementById('closeX').onclick = closePanel;
+panel.addEventListener('click', e => { if (e.target === panel) closePanel(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !panel.hidden) closePanel();
+});
+
+eyeBtn.onclick = function(){
+  const show = keyInput.type === 'password';
+  keyInput.type = show ? 'text' : 'password';
+  eyeBtn.classList.toggle('on', show);
+};
+
+modelSel.onchange = syncModelInput;
+keyInput.addEventListener('focus', function(){
+  if (keyInput.dataset.state === 'masked') keyInput.select();   // 一点就全选，粘贴即替换
+});
+keyInput.addEventListener('input', function(){
+  if (keyInput.dataset.state === 'masked' && keyInput.value !== serverState.key_masked){
+    keyInput.dataset.state = 'typed';
+    eyeBtn.disabled = false;
+  }
+});
+keyInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter'){ e.preventDefault(); testBtn.click(); }
+});
+
+document.getElementById('refreshmodels').onclick = async function(){
+  const btn = this;
+  btn.disabled = true;
+  try {
+    const d = await (await fetch('/models?refresh=1')).json();
+    serverState.models = d.models || [];
+    serverState.models_source = d.source;
+    serverState.models_error = d.error;
+    buildModelOptions(serverState.models, serverState.model);
+    syncModelInput();
+    modelTip.textContent = (d.source === 'live')
+      ? '已重新拉取官方模型列表'
+      : '拉取失败：' + (d.error || '未知原因');
+  } catch (e) {
+    modelTip.textContent = '拉取失败：' + e;
+  }
+  btn.disabled = false;
+};
+
+clearBtn.onclick = async function(){
+  if (!serverState.has_saved_key) return;
+  if (!confirm('确定清除已保存的 API Key 吗？（环境变量里的 Key 不受影响）')) return;
+  clearBtn.disabled = true;
+  try {
+    const r = await fetch('/settings', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({clear_key:true, model: chosenModel() || serverState.model})
+    });
+    const d = await r.json();
+    serverState = d;
+    if (d.has_key){
+      keyInput.value = d.key_masked;
+      keyInput.type = 'text';
+      keyInput.dataset.state = 'masked';
+      eyeBtn.disabled = true;
+    } else {
+      keyInput.value = '';
+      keyInput.type = 'password';
+      keyInput.dataset.state = 'empty';
+      eyeBtn.disabled = false;
+    }
+    keyTip.textContent = d.msg || '已清除保存的 Key';
+    clearBtn.disabled = !d.has_saved_key;
+    updateChips(d);
+    setTest(d.msg || '已清除', 'ok');
+  } catch (e) {
+    setTest('清除失败：' + e, 'err');
+    clearBtn.disabled = false;
+  }
+};
+
+testBtn.onclick = async function(){
+  const model = chosenModel();
+  if (!model){ setTest('请先填写模型名称', 'err'); return; }
+  testBtn.disabled = true;
+  const label = testBtn.textContent;
+  testBtn.textContent = '测试中…';
+  setTest('', '');
+  try {
+    const r = await fetch('/test', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({api_key: chosenKey(), model: model})
+    });
+    const d = await r.json();
+    setTest(d.ok ? d.msg : d.msg, d.ok ? 'ok' : 'err');
+  } catch (e) {
+    setTest('请求失败：' + e, 'err');
+  }
+  testBtn.disabled = false;
+  testBtn.textContent = label;
+};
+
+saveBtn.onclick = async function(){
+  const model = chosenModel();
+  if (!model){ setTest('请先填写模型名称', 'err'); return; }
+  saveBtn.disabled = true;
+  saveBtn.textContent = '保存中…';
+  try {
+    const r = await fetch('/settings', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({api_key: chosenKey(), model: model})
+    });
+    const d = await r.json();
+    if (!d.ok){
+      setTest(d.msg || '保存失败', 'err');
+    } else {
+      updateChips(d);
+      closePanel();
+      statusEl.textContent = '设置已保存 · 模型 ' + d.model + ' · Key 来源 ' + d.key_source;
+    }
+  } catch (e) {
+    setTest('请求失败：' + e, 'err');
+  }
+  saveBtn.disabled = false;
+  saveBtn.textContent = '保存';
+};
+
+if (!{{ 'true' if has_key else 'false' }}) {
+  setTimeout(openPanel, 300);
+}
+</script>
+</body>
+</html>
